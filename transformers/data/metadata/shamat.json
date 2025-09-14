@@ -1,0 +1,41 @@
+{
+  "station_name": "shamat",
+  "tensor_shape": [
+    [
+      66,
+      5,
+      15
+    ]
+  ],
+  "features": [
+    "shamat_P",
+    "shamat_RH",
+    "shamat_T",
+    "shamat_T_ground",
+    "shamat_T_max",
+    "shamat_precipitation",
+    "shamat_wind_direction",
+    "shamat_wind_speed",
+    "shamat_U",
+    "shamat_V",
+    "shamat_U_corrected",
+    "shamat_V_corrected",
+    "rad"
+  ],
+  "units": [
+    "Hpa",
+    "%",
+    "C",
+    "C",
+    "C",
+    "mm",
+    "degrees",
+    "m/s",
+    "?",
+    "?",
+    "?",
+    "?",
+    ""
+  ],
+  "description": "Feature metadata for station 'shamat'"
+}

@@ -1,0 +1,45 @@
+{
+  "station_name": "yad_binyamin",
+  "tensor_shape": [
+    [
+      66,
+      5,
+      15
+    ]
+  ],
+  "features": [
+    "EP_station_NO",
+    "EP_station_NO2",
+    "EP_station_NOX",
+    "EP_station_O3",
+    "EP_station_PM10",
+    "EP_station_PM2.5",
+    "EP_station_RH",
+    "EP_station_SO2",
+    "EP_station_Temp",
+    "EP_station_WD",
+    "EP_station_WS",
+    "EP_station_Rain",
+    "EP_station_CO",
+    "EP_station_Benzene",
+    "factor0"
+  ],
+  "units": [
+    "ug/m3",
+    "ug/m3",
+    "ug/m3",
+    "ug/m3",
+    "ug/m3",
+    "ug/m3",
+    "%",
+    "ug/m3",
+    "C",
+    "degrees",
+    "m/s",
+    "mm",
+    "ug/m3",
+    "ug/m3",
+    ""
+  ],
+  "description": "Feature metadata for station 'yad_binyamin'"
+}
