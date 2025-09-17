@@ -66,39 +66,54 @@ def change_index(df_to_change, df_at_timestamps):
 
     return df_result
 
-def convert_EP_ugm3_to_ppb(df_EP,df_T,df_P,cols_to_convert=None):
-    # ppb = ug/m3 * R*T/P/m, df_T,df_P have both only one col, T at celcius, P at hPa
-    # assuming column names e.g. EP_station_O3
-    if cols_to_convert is None:
-        cols_to_convert = [c for c in df_EP.columns if c.split('_')[-1] in ["NO","NO2","NOX","O3","CO","SO2"]]
-    df_T_at_EP = change_index(df_T, df_EP) + 273.15 # K
-    df_P_at_EP = change_index(df_P, df_EP) * 100 # Pa
-    R = 8.314 # [m3 * Pa / K / mol]
-    N = df_P_at_EP/R/df_T_at_EP # [mol/m3]
-    for col in cols_to_convert:
-        pollutant = col.split('_')[-1]
-        m = None # ug/mol
-        if pollutant=="NO": 
-            m = 30.006*1E6
-        elif pollutant=="NO2":
-            m = 46.005*1E6
-        elif pollutant=="NOX": 
-            continue
-        elif pollutant=="O3":
-            m = 47.997*1E6
-        elif pollutant=="CO":
-            m = 28.01*1E6
-        elif pollutant=="SO2":
-            m = 64.06*1E6
-        df_EP[f"{col}_ppb"] = df_EP[col]/m/N * 1E9
-    col_NOX = [c for c in cols_to_convert if c.split('_')[-1]=="NOX"]
-    col_NO = [c for c in cols_to_convert if c.split('_')[-1]=="NO"]
-    col_NO2 = [c for c in cols_to_convert if c.split('_')[-1]=="NO2"]
-    if len(col_NOX) == 0: return df_EP
-    col_NOX=col_NOX[0]; col_NO=col_NO[0]; col_NO2=col_NO2[0]
-    df_EP[f"{col_NOX}_ppb"] = df_EP[f"{col_NO}_ppb"]+df_EP[f"{col_NO2}_ppb"]
-    return df_EP
+def get_df_from_shamat_rad(filename):
+    def get_timestamp(row):
+        """Converts a timestamp string to a datetime object."""
+        time_str = row['Timestamp']
+        return pd.to_datetime(time_str, format="%d/%m/%Y %H:%M")
+    # Translation dictionary for columns
+    translation_dict = {
+        "קרינה גלובלית (וואט/מ\"ר)": "beit_dagan_radiation_global" # W/m2
+    }
 
+    # Load the CSV file into a DataFrame, handling potential BOM and ensuring correct encoding
+    df = pd.read_csv(filename, encoding='utf-8-sig')
+    # Rename the second column (which usually contains the timestamp) to the consistent timestamp column name
+    df.rename(columns={df.columns[1]: 'Timestamp'}, inplace=True)
+    # Identify the station column (typically the first column) and drop it after separating data
+    station_col = df.columns[0]
+    # Convert the 'Timestamp' column to datetime
+    df['Timestamp'] = df.apply(get_timestamp, axis=1)
+    # Set the 'Timestamp' column as the index
+    df.set_index('Timestamp', inplace=True)
+    df.rename(columns=translation_dict, inplace=True)
+
+    return df
+
+def coerce_numeric_columns(df, min_convertible_ratio=0.8):
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            s = df[col].astype(str)
+
+            # normalize common nuisances
+            s = s.str.strip()
+            s = s.str.replace('\u2212', '-', regex=False)  # unicode minus to ASCII
+            s = s.str.replace('\xa0', '', regex=False)     # non-breaking space
+            s = s.str.replace(' ', '', regex=False)        # regular spaces
+
+            # handle thousands and decimal commas
+            # if you know your data uses decimal comma, do decimal=',' in read_csv instead
+            s = s.str.replace(',', '.')  # treat comma as decimal point
+            # remove anything not digit, sign, or dot (keeps negatives and decimals)
+            s_clean = s.str.replace(r'[^0-9\.\-+]', '', regex=True)
+
+            conv = pd.to_numeric(s_clean, errors='coerce')
+
+            # if enough values convert, accept the conversion
+            if conv.notna().mean() >= min_convertible_ratio:
+                df[col] = conv
+    return df
 
 def get_df_from_shamat_csv(filename, timestamp_col_name="Timestamp"):
     """
@@ -123,15 +138,18 @@ def get_df_from_shamat_csv(filename, timestamp_col_name="Timestamp"):
         "טמפרטורה ליד הקרקע (C°)": "shamat_T_ground",
         "טמפרטורת מינימום (C°)": "shamat_T_min",
         "טמפרטורת מקסימום (C°)": "shamat_T_max",
+        "טמפרטורה לחה (C°)": "shamat_T_wet",  # new: wet-bulb temperature
         "כיוון המשב העליון (מעלות)": "shamat_wind_gust_direction",
         "כיוון הרוח (מעלות)": "shamat_wind_direction",
-        "כמות גשם (מ\"מ)": "shamat_precipitation",
-        "מהירות המשב העליון (מטר לשניה)": "shamat_wind_gust_speed",
         "מהירות רוח (מטר לשניה)": "shamat_wind_speed",
-        "מהירות רוח 10 דקתית מקסימלית (מטר לשניה)": "shamat_wind_speed_10min_max",
         "מהירות רוח דקתית מקסימלית (מטר לשניה)": "shamat_wind_speed_1min_max",
-        "סטיית התקן של כיוון הרוח (מעלות)": "shamat_wind_direction_std_dev"
+        "מהירות רוח 10 דקתית מקסימלית (מטר לשניה)": "shamat_wind_speed_10min_max",
+        "זמן סיום מהירות רוח 10 דקתית מקסימלית  (hhmm)": "shamat_wind_speed_10min_max_time",  # new
+        "מהירות המשב העליון (מטר לשניה)": "shamat_wind_gust_speed",
+        "סטיית התקן של כיוון הרוח (מעלות)": "shamat_wind_direction_std_dev",
+        "כמות גשם (מ\"מ)": "shamat_precipitation"
     }
+
     # Load the CSV file into a DataFrame, handling potential BOM and ensuring correct encoding
     df = pd.read_csv(filename, encoding='utf-8-sig')
     # Rename the second column (which usually contains the timestamp) to the consistent timestamp column name
@@ -143,21 +161,38 @@ def get_df_from_shamat_csv(filename, timestamp_col_name="Timestamp"):
     # Set the 'Timestamp' column as the index
     df.set_index(timestamp_col_name, inplace=True)
     # Separate data by station
-    beit_dagan_radiation = df[df[station_col] == "בית דגן קרינה"].drop(columns=[station_col])
     beit_dagan = df[df[station_col] == "בית דגן"].drop(columns=[station_col])
-    # Drop columns that contain only NaN values
-    beit_dagan_radiation.dropna(axis=1, how='all', inplace=True)
-    beit_dagan.dropna(axis=1, how='all', inplace=True)
-    # Translate column names for each station
-    beit_dagan_radiation.rename(columns=translation_dict, inplace=True)
     beit_dagan.rename(columns=translation_dict, inplace=True)
     # Merge the dataframes on the timestamp index
-    df_merged = pd.merge(beit_dagan_radiation, beit_dagan, left_index=True, right_index=True, how='outer')
     # converting the shamat_wind_speed to floats instead of strings
-    df_merged["shamat_wind_speed"] = pd.to_numeric(df_merged["shamat_wind_speed"], errors='coerce')
-    df_merged["shamat_wind_direction"] = pd.to_numeric(df_merged["shamat_wind_direction"], errors='coerce')
+    beit_dagan["shamat_wind_speed"] = pd.to_numeric(beit_dagan["shamat_wind_speed"], errors='coerce')
+    beit_dagan["shamat_wind_direction"] = pd.to_numeric(beit_dagan["shamat_wind_direction"], errors='coerce')
     # Select only numeric columns to avoid future warnings and correctly perform mean operation
-    numeric_df = df_merged.select_dtypes(include=[float, int])
+    beit_dagan = coerce_numeric_columns(beit_dagan)
+    beit_dagan = beit_dagan.drop(columns=["shamat_wind_speed_10min_max_time"]) # the format of this line is hh:mm which I don't want to deal with
+
+
+
+    # All original columns
+    # all_cols = beit_dagan.columns
+
+    # # Columns that remain numeric
+    # numeric_cols = beit_dagan.select_dtypes(include=[float, int]).columns
+
+    # # Columns that were dropped (non-numeric)
+    # non_numeric_cols = set(all_cols) - set(numeric_cols)
+
+
+    # print("Numeric columns kept:\n", numeric_cols.tolist())
+    # print("\nNon-numeric columns filtered out:\n", list(non_numeric_cols))
+    # # among dropped, which are objects that might be numeric
+    # maybe_numeric = [c for c in non_numeric_cols if beit_dagan[c].dtype == 'object']
+
+    # print("Dropped object columns that might be numeric:", maybe_numeric)
+
+
+
+    numeric_df = beit_dagan.select_dtypes(include=[float, int])
     # Merge columns with the same name by averaging their values
     merged_df = numeric_df.groupby(numeric_df.columns, axis=1).mean()
     merged_df["shamat_U"] = merged_df["shamat_wind_speed"]*np.sin(np.radians(merged_df["shamat_wind_direction"])) # shamat_wind_direction is in degrees from north
@@ -187,7 +222,7 @@ def get_df_from_radiation_csv(filename):
     return df
 
 
-def station_csv_to_tensor(csv_path, timestamp_list, max_features):
+def station_csv_to_tensor(csv_path, timestamp_list, max_features, max_measurements=5):
     '''
     Converts a station CSV to a tensor with shape [P, L, max_features],
     padding with NaNs if the station has fewer than max_features features.
@@ -207,19 +242,22 @@ def station_csv_to_tensor(csv_path, timestamp_list, max_features):
 
     P = len(timestamp_list)
     L = 5 # number of lags (0, -1, -2, -3,- 4)
+    M = int(max_measurements)
+    F = max_features
 
     # Keep only numeric columns
     df = df.select_dtypes(include=[float, int])
 
     # Initialize tensor with NaNs
-    data_tensor = torch.full((P, L, max_features), float('nan'))
+    data_tensor = torch.full((P, L, F, M), float('nan'), dtype=torch.float32)
+
 
     for p, flight_time in enumerate(timestamp_list):
         for lag in range(L):
             time_lag = flight_time - pd.Timedelta(hours=lag)
 
             # ±7.5 minute window
-            half_window = pd.Timedelta(minutes=7.5)
+            half_window = pd.Timedelta(minutes=12) # suppose to be 5 values per feature *for EP*
             window_start = time_lag - half_window
             window_end = time_lag + half_window
 
@@ -230,18 +268,26 @@ def station_csv_to_tensor(csv_path, timestamp_list, max_features):
                 print(f"No data for flight_time: {flight_time}, lag: {lag}")
                 continue
 
-            # Compute mean values
-            mean_vals = window_df.mean().values.astype(np.float32)
+            vals = window_df.to_numpy(dtype=np.float32)
 
-            # Pad or truncate to max_features
-            if len(mean_vals) < max_features:
-                padded = np.full((max_features,), np.nan, dtype=np.float32)
-                padded[:len(mean_vals)] = mean_vals
-            else:
-                padded = mean_vals[:max_features]
+            # Pad or truncate features (columns) to match max_features
+            if vals.shape[1] < max_features:
+                pad_cols = np.full((vals.shape[0], max_features - vals.shape[1]), np.nan, dtype=np.float32)
+                vals = np.hstack([vals, pad_cols])
+            elif vals.shape[1] > max_features:
+                vals = vals[:, :max_features]
+
+            # Pad or truncate measurements to M (rows)
+            if vals.shape[0] < M:
+                pad_rows = np.full((M - vals.shape[0], max_features), np.nan, dtype=np.float32)
+                vals = np.vstack([vals, pad_rows])
+            elif vals.shape[0] > M:
+                vals = vals[:M, :]
+
+            vals_FM = vals.T
 
             # Insert into tensor
-            data_tensor[p, lag, :] = torch.from_numpy(padded)
+            data_tensor[p, lag, :, :] = torch.from_numpy(vals_FM)
 
     return data_tensor
 
@@ -256,9 +302,45 @@ def save_tensor_metadata(csv_path, station_name, tensor_shape, output_dir="."):
     - station_name (str): Name of the station (used for metadata and filename).
     - output_dir (str): Directory to save the metadata JSON file (default: current folder).
 
+    -- experimental -----> adding coordinates <------
+
     Returns:
     - str: Path to the saved JSON file.
     """
+    coordinates_dict ={
+        'jerusalem_bikha': "33.33, 33.33",
+        'nir_galim': "33.33, 33.33",
+        'tel_aviv_yefet': "33.33, 33.33",
+        'bnei_atarot': "33.33, 33.33",
+        'karmei_yosef': "33.33, 33.33",
+        'yavne': "33.33, 33.33",
+        'ariel': "33.33, 33.33",
+        'tel_aviv_levinsky': "33.33, 33.33",
+        'modiin': "33.33, 33.33",
+        'ramle_omanim': "33.33, 33.33",
+        'holon': "33.33, 33.33",
+        'kfar_menachem_harhava': "33.33, 33.33",
+        'ahisemech': "33.33, 33.33",
+        'tel_aviv_lehi': "33.33, 33.33",
+        'gan_yavne': "33.33, 33.33",
+        'ashdod_tsfoni': "33.33, 33.33",
+        'elad': "33.33, 33.33",
+        'beit_shemesh': "33.33, 33.33",
+        'timorim': "33.33, 33.33",
+        'bnei_darom': "33.33, 33.33",
+        'beit_heshmonai': "33.33, 33.33",
+        'rehovot': "33.33, 33.33",
+        'kiryat_malachi': "33.33, 33.33",
+        'gan_darom': "33.33, 33.33",
+        'or_yehuda': "33.33, 33.33",
+        'kfar_menachem': "33.33, 33.33",
+        'yad_binyamin': "33.33, 33.33",
+        'hevel_yavne': "33.33, 33.33",
+        'yad_rambam': "33.33, 33.33",
+        'ashdod_kala': "33.33, 33.33",
+        'rishon_herzel': "33.33, 33.33",
+        'jerusalem_atarot': "33.33, 33.33"
+    }
 
     feature_units_dict ={
         "EP_station_NO": "ug/m3",
@@ -291,15 +373,19 @@ def save_tensor_metadata(csv_path, station_name, tensor_shape, output_dir="."):
 
     }
 
-    # Load feature names from CSV
+    # Load feature names and station name from CSV
     feature_names = pd.read_csv(csv_path, index_col=0).columns.tolist()
 
     # Match units to features using the provided dictionary
     units = [feature_units_dict.get(name, "") for name in feature_names]
 
+    # Match coordinates to station using the dictionary
+    coordinates = coordinates_dict.get(station_name, "")
+
     # Build metadata structure
     metadata = {
         "station_name": station_name,
+        "station_coordinates": coordinates,
         "tensor_shape": list(tensor_shape),
         "features": feature_names,
         "units": units,

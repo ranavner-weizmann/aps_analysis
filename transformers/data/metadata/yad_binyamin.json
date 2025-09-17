@@ -1,10 +1,12 @@
 {
   "station_name": "yad_binyamin",
+  "station_coordinates": "33.33, 33.33",
   "tensor_shape": [
     [
       66,
       5,
-      15
+      20,
+      5
     ]
   ],
   "features": [

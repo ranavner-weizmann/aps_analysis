@@ -1,10 +1,12 @@
 {
   "station_name": "shamat",
+  "station_coordinates": "",
   "tensor_shape": [
     [
       66,
       5,
-      15
+      20,
+      5
     ]
   ],
   "features": [
@@ -13,9 +15,15 @@
     "shamat_T",
     "shamat_T_ground",
     "shamat_T_max",
+    "shamat_T_min",
     "shamat_precipitation",
     "shamat_wind_direction",
+    "shamat_wind_direction_std_dev",
+    "shamat_wind_gust_direction",
+    "shamat_wind_gust_speed",
     "shamat_wind_speed",
+    "shamat_wind_speed_10min_max",
+    "shamat_wind_speed_1min_max",
     "shamat_U",
     "shamat_V",
     "shamat_U_corrected",
@@ -28,9 +36,15 @@
     "C",
     "C",
     "C",
+    "",
     "mm",
     "degrees",
+    "",
+    "",
+    "",
     "m/s",
+    "",
+    "",
     "?",
     "?",
     "?",
